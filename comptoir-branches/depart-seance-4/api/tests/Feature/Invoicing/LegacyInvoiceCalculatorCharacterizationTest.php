@@ -33,6 +33,13 @@ function ligne(string $sku, string $category, float $unitPrice, int $qty): array
     return ['sku' => $sku, 'category' => $category, 'unit_price' => $unitPrice, 'qty' => $qty];
 }
 
+// round() sur un flottant à la demi-unité : PHP 8.4 et plus arrondit la valeur binaire réelle
+// (31.6349999… -> 31.63) ; PHP 8.3 pré-arrondit d'abord (-> 31.64). On fige ce que le code produit.
+function selonPhp(float $php84, float $php83): float
+{
+    return PHP_VERSION_ID >= 80400 ? $php84 : $php83;
+}
+
 function attendu(array $lines, float $subtotal, float $discount, float $shipping, array $vat, float $vatTotal, float $total): array
 {
     return [
@@ -71,9 +78,9 @@ it('reproduit le calcul actuel', function (array $order, array $expected) {
         ['customer' => client('pro', 'FR', 'FR12345678901'), 'lines' => [ligne('OUT-3', 'outillage', 250, 4)]],
         attendu([['sku' => 'OUT-3', 'qty' => 4, 'total' => 1000.0, 'vat_rate' => 0.2]], 1000, 0, 0, ['0.2' => 200.0], 200, 1200),
     ],
-    'remise quantité 5 % dès 10 unités, arrondi flottant (31,635 -> 31,63)' => [
+    'remise quantité 5 % dès 10 unités, arrondi flottant (31,635 -> 31,63 ou 31,64 selon PHP)' => [
         ['customer' => client(), 'lines' => [ligne('VIS-1', 'quincaillerie', 3.33, 10)]],
-        attendu([['sku' => 'VIS-1', 'qty' => 10, 'total' => 31.63, 'vat_rate' => 0.2]], 31.63, 0, 12.9, ['0.2' => 8.91], 8.91, 53.44),
+        attendu([['sku' => 'VIS-1', 'qty' => 10, 'total' => selonPhp(31.63, 31.64), 'vat_rate' => 0.2]], selonPhp(31.63, 31.64), 0, 12.9, ['0.2' => 8.91], 8.91, selonPhp(53.44, 53.45)),
     ],
     'CONSTAT : 60 unités : toujours 5 %, la branche 10 % n\'est jamais atteinte' => [
         ['customer' => client(), 'lines' => [ligne('VIS-1', 'quincaillerie', 3.33, 60)]],
