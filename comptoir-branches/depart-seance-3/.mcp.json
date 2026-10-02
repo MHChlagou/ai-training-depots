@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "comptoir-db": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@bytebase/dbhub",
+        "--dsn",
+        "${COMPTOIR_DB_READONLY_DSN:-postgresql://comptoir_ro:comptoir_ro@localhost:5432/comptoir}"
+      ]
+    }
+  }
+}

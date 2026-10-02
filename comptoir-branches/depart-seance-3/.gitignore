@@ -1,0 +1,8 @@
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Fichiers personnels de Claude Code : jamais versionnés
+CLAUDE.local.md
+.claude/settings.local.json

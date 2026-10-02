@@ -1,0 +1,10 @@
+# Dossier de sortie par défaut de publier.sh (dépôts git construits, jamais versionnés ici)
+_publication/
+
+# Réservés au formateur : jamais versionnés dans ce dépôt
+_formateur/
+publier.sh
+README-formateur.md
+SPEC-comptoir.md
+comptoir-vulnerable/README.md
+_generateurs/

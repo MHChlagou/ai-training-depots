@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(php artisan test *)",
+      "Bash(php artisan route:list *)",
+      "Bash(php artisan make:migration *)",
+      "Bash(php artisan make:test *)",
+      "Bash(./vendor/bin/pest *)",
+      "Bash(./vendor/bin/pint *)",
+      "Bash(npm run lint *)",
+      "Bash(npm run test *)",
+      "Bash(npm run build *)",
+      "Bash(npx vitest *)",
+      "Bash(npx playwright test *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git status *)",
+      "mcp__comptoir-db"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(composer require *)",
+      "Bash(npm install *)",
+      "Bash(php artisan migrate *)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Bash(git push *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(php artisan migrate:fresh *)",
+      "Bash(php artisan db:wipe *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format-after-edit.sh",
+            "timeout": 60,
+            "statusMessage": "Formatage Pint / Prettier"
+          }
+        ]
+      }
+    ]
+  }
+}

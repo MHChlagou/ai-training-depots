@@ -1,0 +1,47 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Store{{ Model }}Request;
+use App\Http\Resources\{{ Model }}Resource;
+use App\Models\{{ Model }};
+use App\Services\{{ Model }}Service;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+
+final class {{ Model }}Controller extends Controller
+{
+    public function __construct(private readonly {{ Model }}Service $service)
+    {
+    }
+
+    public function index(): AnonymousResourceCollection
+    {
+        // Charger ici toutes les relations exposées par {{ Model }}Resource.
+        $items = {{ Model }}::query()
+            ->with([/* 'relation' */])
+            ->latest()
+            ->paginate(20);
+
+        return {{ Model }}Resource::collection($items);
+    }
+
+    public function store(Store{{ Model }}Request $request): JsonResponse
+    {
+        $item = $this->service->create($request->validated());
+
+        return {{ Model }}Resource::make($item)
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    // Le nom de la variable doit correspondre au paramètre de route ({{ model }})
+    // pour que le route model binding fonctionne (404 automatique si introuvable).
+    public function show({{ Model }} ${{ model }}): {{ Model }}Resource
+    {
+        return {{ Model }}Resource::make(${{ model }}->load([/* 'relation' */]));
+    }
+}

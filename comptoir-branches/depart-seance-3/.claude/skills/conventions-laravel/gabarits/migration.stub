@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+// Générer le fichier avec : php artisan make:migration create_{{ table }}_table
+// puis reprendre ce contenu. Ne jamais modifier une migration déjà fusionnée.
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('{{ table }}', function (Blueprint $table) {
+            $table->id();
+            // Clé étrangère + index explicite (PostgreSQL n'indexe pas les FK) :
+            // $table->foreignId('customer_id')->constrained();
+            // $table->index('customer_id');
+            // Montants en centimes :
+            // $table->unsignedBigInteger('total_cents')->default(0);
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('{{ table }}');
+    }
+};

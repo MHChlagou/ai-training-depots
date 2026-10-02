@@ -1,0 +1,8 @@
+# Chemins retirés en passant à cet état (relatifs à la racine du dépôt comptoir).
+# Lu par depots/publier.sh ; lignes vides et # ignorées ; un chemin absent est ignoré.
+#
+# Garde-fou : la séance 5 fait créer le calculateur de remise par TDD, il ne doit
+# donc pas exister au départ (SPEC-comptoir.md, section 8). Aucune surcouche
+# précédente ne le crée : cette ligne ne retire rien aujourd'hui.
+api/app/Services/Pricing
+api/tests/Unit/Services/Pricing

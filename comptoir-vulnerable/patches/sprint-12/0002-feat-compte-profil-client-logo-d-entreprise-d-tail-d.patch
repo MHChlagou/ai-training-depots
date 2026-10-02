@@ -1,0 +1,313 @@
+From e0662a931d936c323f3cc209d325d6660039e315 Mon Sep 17 00:00:00 2001
+From: Thomas Roux <thomas.roux@exemple.test>
+Date: Tue, 15 Sep 2026 16:41:00 +0200
+Subject: [PATCH 2/5] =?UTF-8?q?feat(compte):=20profil=20client,=20logo=20d?=
+ =?UTF-8?q?'entreprise,=20d=C3=A9tail=20de=20commande?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- PATCH /api/me : le client modifie son nom, sa société, son e-mail et
+  son téléphone.
+- POST /api/me/logo : récupération du logo de l'entreprise à partir
+  d'une adresse (site, CDN), stocké sur le disque public.
+- GET /api/orders/{id} : détail d'une commande avec ses lignes.
+---
+ .../Api/CustomerLogoController.php            | 55 +++++++++++++++++++
+ .../Http/Controllers/Api/OrderController.php  | 10 ++++
+ .../Controllers/Api/ProfileController.php     | 17 ++++++
+ api/app/Models/Customer.php                   |  8 +--
+ api/routes/api.php                            |  4 ++
+ .../Feature/Account/CustomerLogoTest.php      | 39 +++++++++++++
+ .../Feature/Account/ProfileUpdateTest.php     | 45 +++++++++++++++
+ api/tests/Feature/OrderShowTest.php           | 27 +++++++++
+ 8 files changed, 198 insertions(+), 7 deletions(-)
+ create mode 100644 api/app/Http/Controllers/Api/CustomerLogoController.php
+ create mode 100644 api/tests/Feature/Account/CustomerLogoTest.php
+ create mode 100644 api/tests/Feature/Account/ProfileUpdateTest.php
+ create mode 100644 api/tests/Feature/OrderShowTest.php
+
+diff --git a/api/app/Http/Controllers/Api/CustomerLogoController.php b/api/app/Http/Controllers/Api/CustomerLogoController.php
+new file mode 100644
+index 0000000..1bd2261
+--- /dev/null
++++ b/api/app/Http/Controllers/Api/CustomerLogoController.php
+@@ -0,0 +1,55 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers\Api;
++
++use App\Http\Controllers\Controller;
++use Illuminate\Http\JsonResponse;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Storage;
++use Illuminate\Support\Str;
++
++class CustomerLogoController extends Controller
++{
++    private const EXTENSIONS = [
++        'image/png' => 'png',
++        'image/jpeg' => 'jpg',
++        'image/webp' => 'webp',
++        'image/svg+xml' => 'svg',
++    ];
++
++    /**
++     * POST /api/me/logo : récupère le logo de l'entreprise à partir de son adresse (site, CDN, réseau social).
++     */
++    public function store(Request $request): JsonResponse
++    {
++        $request->validate([
++            'logo_url' => ['required', 'string', 'max:2048'],
++        ]);
++
++        $response = Http::timeout(10)->get($request->input('logo_url'));
++
++        $type = strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0]));
++
++        if (! $response->successful() || ! isset(self::EXTENSIONS[$type])) {
++            // Détail renvoyé au client pour l'aider à corriger l'adresse saisie.
++            return response()->json([
++                'message' => 'Le fichier récupéré n\'est pas une image exploitable.',
++                'details' => [
++                    'status' => $response->status(),
++                    'content_type' => $type,
++                    'body' => Str::limit($response->body(), 500),
++                ],
++            ], 422);
++        }
++
++        $path = 'logos/'.Str::uuid().'.'.self::EXTENSIONS[$type];
++        Storage::disk('public')->put($path, $response->body());
++
++        $request->user()->update(['logo_path' => $path]);
++
++        return response()->json(['logo_path' => $path], 201);
++    }
++}
+diff --git a/api/app/Http/Controllers/Api/OrderController.php b/api/app/Http/Controllers/Api/OrderController.php
+index 39a4654..5607baf 100644
+--- a/api/app/Http/Controllers/Api/OrderController.php
++++ b/api/app/Http/Controllers/Api/OrderController.php
+@@ -48,4 +48,14 @@ public function store(StoreOrderRequest $request, OrderService $orders): JsonRes
+             ->response()
+             ->setStatusCode(201);
+     }
++
++    /**
++     * GET /api/orders/{id}
++     */
++    public function show(int $id): OrderResource
++    {
++        $order = Order::with(['lines.product', 'customer'])->findOrFail($id);
++
++        return OrderResource::make($order);
++    }
+ }
+diff --git a/api/app/Http/Controllers/Api/ProfileController.php b/api/app/Http/Controllers/Api/ProfileController.php
+index cc2bdba..f5c5abb 100644
+--- a/api/app/Http/Controllers/Api/ProfileController.php
++++ b/api/app/Http/Controllers/Api/ProfileController.php
+@@ -5,6 +5,7 @@
+ use App\Http\Controllers\Controller;
+ use App\Http\Resources\CustomerResource;
+ use Illuminate\Http\Request;
++use Illuminate\Validation\Rule;
+ 
+ class ProfileController extends Controller
+ {
+@@ -15,4 +16,20 @@ public function show(Request $request): CustomerResource
+     {
+         return CustomerResource::make($request->user());
+     }
++
++    /**
++     * PATCH /api/me
++     */
++    public function update(Request $request): CustomerResource
++    {
++        $request->validate([
++            'name' => ['sometimes', 'string', 'max:120'],
++            'email' => ['sometimes', 'email', 'max:190', Rule::unique('customers', 'email')->ignore($request->user()->id)],
++            'phone' => ['sometimes', 'nullable', 'string', 'max:30'],
++        ]);
++
++        $request->user()->update($request->all());
++
++        return CustomerResource::make($request->user()->fresh());
++    }
+ }
+diff --git a/api/app/Models/Customer.php b/api/app/Models/Customer.php
+index 556a6c6..5e373d0 100644
+--- a/api/app/Models/Customer.php
++++ b/api/app/Models/Customer.php
+@@ -12,13 +12,7 @@ class Customer extends Authenticatable
+ {
+     use HasApiTokens, HasFactory, Notifiable;
+ 
+-    protected $fillable = [
+-        'name',
+-        'email',
+-        'password',
+-        'company',
+-        'phone',
+-    ];
++    protected $guarded = [];
+ 
+     protected $hidden = [
+         'password',
+diff --git a/api/routes/api.php b/api/routes/api.php
+index f8aaef5..5b42f2f 100644
+--- a/api/routes/api.php
++++ b/api/routes/api.php
+@@ -1,5 +1,6 @@
+ <?php
+ 
++use App\Http\Controllers\Api\CustomerLogoController;
+ use App\Http\Controllers\Api\DiscountTierController;
+ use App\Http\Controllers\Api\OrderController;
+ use App\Http\Controllers\Api\OrderStatsController;
+@@ -21,5 +22,8 @@
+ 
+ Route::middleware('auth:sanctum')->group(function () {
+     Route::get('/me', [ProfileController::class, 'show'])->name('me.show');
++    Route::patch('/me', [ProfileController::class, 'update'])->name('me.update');
++    Route::post('/me/logo', [CustomerLogoController::class, 'store'])->name('me.logo');
+     Route::get('/me/order-stats', [OrderStatsController::class, 'show'])->name('me.order-stats');
++    Route::get('/orders/{id}', [OrderController::class, 'show'])->whereNumber('id')->name('orders.show');
+ });
+diff --git a/api/tests/Feature/Account/CustomerLogoTest.php b/api/tests/Feature/Account/CustomerLogoTest.php
+new file mode 100644
+index 0000000..c9cb5a0
+--- /dev/null
++++ b/api/tests/Feature/Account/CustomerLogoTest.php
+@@ -0,0 +1,39 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Customer;
++use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Storage;
++
++beforeEach(function () {
++    Storage::fake('public');
++});
++
++it('enregistre le logo récupéré et son chemin sur le client', function () {
++    Http::fake([
++        'cdn.comptoir.example/*' => Http::response('octets-png', 200, ['Content-Type' => 'image/png']),
++    ]);
++    $customer = Customer::factory()->create();
++
++    $path = $this->actingAs($customer)
++        ->postJson('/api/me/logo', ['logo_url' => 'https://cdn.comptoir.example/clients/atelier-nord.png'])
++        ->assertCreated()
++        ->json('logo_path');
++
++    expect($path)->toStartWith('logos/')->toEndWith('.png');
++    Storage::disk('public')->assertExists($path);
++    expect($customer->fresh()->logo_path)->toBe($path);
++});
++
++it('exige une adresse de logo', function () {
++    $this->actingAs(Customer::factory()->create())
++        ->postJson('/api/me/logo', [])
++        ->assertUnprocessable()
++        ->assertJsonValidationErrors('logo_url');
++});
++
++it('exige une authentification', function () {
++    $this->postJson('/api/me/logo', ['logo_url' => 'https://cdn.comptoir.example/logo.png'])
++        ->assertUnauthorized();
++});
+diff --git a/api/tests/Feature/Account/ProfileUpdateTest.php b/api/tests/Feature/Account/ProfileUpdateTest.php
+new file mode 100644
+index 0000000..aedabe1
+--- /dev/null
++++ b/api/tests/Feature/Account/ProfileUpdateTest.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Customer;
++
++it('met à jour le nom, la société et le téléphone du client connecté', function () {
++    $customer = Customer::factory()->create(['name' => 'Karim B.', 'phone' => null]);
++
++    $this->actingAs($customer)
++        ->patchJson('/api/me', [
++            'name' => 'Karim Benali',
++            'company' => 'Atelier Nord',
++            'phone' => '03 20 00 00 00',
++        ])
++        ->assertOk()
++        ->assertJsonPath('data.name', 'Karim Benali')
++        ->assertJsonPath('data.company', 'Atelier Nord')
++        ->assertJsonPath('data.phone', '03 20 00 00 00');
++
++    expect($customer->fresh()->name)->toBe('Karim Benali');
++});
++
++it('refuse une adresse e-mail déjà utilisée par un autre client', function () {
++    Customer::factory()->create(['email' => 'pris@exemple.test']);
++    $customer = Customer::factory()->create();
++
++    $this->actingAs($customer)
++        ->patchJson('/api/me', ['email' => 'pris@exemple.test'])
++        ->assertUnprocessable()
++        ->assertJsonValidationErrors('email');
++});
++
++it('accepte de conserver sa propre adresse e-mail', function () {
++    $customer = Customer::factory()->create(['email' => 'moi@exemple.test']);
++
++    $this->actingAs($customer)
++        ->patchJson('/api/me', ['email' => 'moi@exemple.test', 'name' => 'Moi'])
++        ->assertOk()
++        ->assertJsonPath('data.email', 'moi@exemple.test');
++});
++
++it('exige une authentification', function () {
++    $this->patchJson('/api/me', ['name' => 'Anonyme'])->assertUnauthorized();
++});
+diff --git a/api/tests/Feature/OrderShowTest.php b/api/tests/Feature/OrderShowTest.php
+new file mode 100644
+index 0000000..107f9cf
+--- /dev/null
++++ b/api/tests/Feature/OrderShowTest.php
+@@ -0,0 +1,27 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Customer;
++use App\Models\Order;
++use App\Models\OrderLine;
++
++it('affiche le détail d\'une commande avec ses lignes', function () {
++    $customer = Customer::factory()->create();
++    $order = Order::factory()->for($customer)->create(['total_cents' => 2500]);
++    OrderLine::factory()->for($order)->create(['quantity' => 2, 'unit_price_cents' => 1250]);
++
++    $this->actingAs($customer)
++        ->getJson("/api/orders/{$order->id}")
++        ->assertOk()
++        ->assertJsonPath('data.reference', $order->reference)
++        ->assertJsonPath('data.total_cents', 2500)
++        ->assertJsonPath('data.lines_count', 1)
++        ->assertJsonPath('data.lines.0.quantity', 2);
++});
++
++it('renvoie 404 pour une commande inexistante', function () {
++    $this->actingAs(Customer::factory()->create())
++        ->getJson('/api/orders/999999')
++        ->assertNotFound();
++});
+-- 
+2.43.0
+

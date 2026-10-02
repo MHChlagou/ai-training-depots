@@ -1,0 +1,40 @@
+# .github/workflows/claude.yml
+#
+# Mode interactif de la Claude Code GitHub Action : Claude répond quand un utilisateur
+# ayant l'accès en écriture au dépôt mentionne @claude dans un commentaire d'issue ou de PR.
+# Exemple : « @claude explique pourquoi cette requête est vulnérable et propose un correctif ».
+#
+# Même prérequis que claude-code-review.yml (GitHub App + secret).
+# Avec un abonnement Claude, remplacer anthropic_api_key par
+#   claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude:
+    # Évite de démarrer un runner pour les commentaires sans mention.
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Limite le nombre d'itérations d'une réponse (maîtrise des coûts).
+          claude_args: "--max-turns 15"

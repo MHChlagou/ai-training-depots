@@ -1,0 +1,16 @@
+# dépendances
+node_modules
+
+# build Next.js
+.next
+next-env.d.ts
+*.tsbuildinfo
+
+# variables d'environnement locales
+.env*.local
+
+# rapports de tests
+playwright-report
+test-results
+coverage
+reports

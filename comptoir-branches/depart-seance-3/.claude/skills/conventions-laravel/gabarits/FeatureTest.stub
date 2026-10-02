@@ -1,0 +1,30 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\{{ Model }};
+
+// Fichier : api/tests/Feature/{{ Model }}Test.php
+// RefreshDatabase est appliqué aux tests Feature via tests/Pest.php.
+
+it('liste les {{ models }} en JSON paginé', function () {
+    {{ Model }}::factory()->count(3)->create();
+
+    $this->getJson('/api/{{ models }}')
+        ->assertOk()
+        ->assertJsonCount(3, 'data')
+        ->assertJsonStructure(['data' => [['id', 'created_at']], 'links', 'meta']);
+});
+
+it('crée un {{ Model }} valide', function () {
+    $payload = {{ Model }}::factory()->make()->toArray();
+
+    $this->postJson('/api/{{ models }}', $payload)
+        ->assertCreated()
+        ->assertJsonStructure(['data' => ['id']]);
+});
+
+it('refuse un {{ Model }} invalide', function () {
+    $this->postJson('/api/{{ models }}', [])
+        ->assertUnprocessable();
+});

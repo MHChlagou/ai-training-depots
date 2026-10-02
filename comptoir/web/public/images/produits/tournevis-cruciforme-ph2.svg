@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240" role="img" aria-label="Tournevis cruciforme PH2">
+  <rect width="320" height="240" fill="#f0f3f6"/>
+  <rect x="16" y="16" width="288" height="208" rx="12" fill="none" stroke="#0b5cad" stroke-width="4"/>
+  <circle cx="160" cy="100" r="44" fill="#0b5cad" opacity="0.15"/>
+  <text x="160" y="190" font-family="system-ui, sans-serif" font-size="16" fill="#0b5cad" text-anchor="middle">Tournevis cruciforme PH2</text>
+</svg>

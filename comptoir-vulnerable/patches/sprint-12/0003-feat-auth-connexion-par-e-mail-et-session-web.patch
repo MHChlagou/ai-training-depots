@@ -1,0 +1,535 @@
+From 59457574fe1bbd0bd864f62d4864824cad5c5354 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?In=C3=A8s=20Garnier?= <ines.garnier@exemple.test>
+Date: Thu, 17 Sep 2026 11:05:00 +0200
+Subject: [PATCH 3/5] feat(auth): connexion par e-mail et session web
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- POST /api/login : échange e-mail et mot de passe contre un jeton
+  Sanctum.
+- Front : page /connexion, route handler /api/session qui pose le cookie
+  comptoir_session, page /compte (profil et synthèse des commandes),
+  lien « Mon compte » dans l'en-tête.
+- proxy.ts redirige vers /connexion toute page /compte sans session.
+---
+ .../Http/Controllers/Api/AuthController.php   | 44 ++++++++++++
+ api/routes/api.php                            |  2 +
+ api/tests/Feature/Auth/LoginTest.php          | 40 +++++++++++
+ web/app/api/session/route.ts                  | 42 ++++++++++++
+ web/app/compte/page.tsx                       | 48 +++++++++++++
+ web/app/connexion/page.tsx                    | 16 +++++
+ web/components/LoginForm.tsx                  | 67 +++++++++++++++++++
+ web/components/SiteHeader.tsx                 |  3 +
+ web/lib/api.ts                                | 38 +++++++++++
+ web/lib/session.ts                            | 31 +++++++++
+ web/proxy.test.ts                             | 21 ++++++
+ web/proxy.ts                                  | 20 ++++++
+ web/types/api.ts                              |  6 ++
+ 13 files changed, 378 insertions(+)
+ create mode 100644 api/app/Http/Controllers/Api/AuthController.php
+ create mode 100644 api/tests/Feature/Auth/LoginTest.php
+ create mode 100644 web/app/api/session/route.ts
+ create mode 100644 web/app/compte/page.tsx
+ create mode 100644 web/app/connexion/page.tsx
+ create mode 100644 web/components/LoginForm.tsx
+ create mode 100644 web/lib/session.ts
+ create mode 100644 web/proxy.test.ts
+ create mode 100644 web/proxy.ts
+
+diff --git a/api/app/Http/Controllers/Api/AuthController.php b/api/app/Http/Controllers/Api/AuthController.php
+new file mode 100644
+index 0000000..0c75e1f
+--- /dev/null
++++ b/api/app/Http/Controllers/Api/AuthController.php
+@@ -0,0 +1,44 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers\Api;
++
++use App\Http\Controllers\Controller;
++use App\Models\Customer;
++use Illuminate\Http\JsonResponse;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Support\Facades\Log;
++
++class AuthController extends Controller
++{
++    /**
++     * POST /api/login : échange e-mail + mot de passe contre un jeton Sanctum.
++     */
++    public function login(Request $request): JsonResponse
++    {
++        Log::info('Tentative de connexion', $request->all());
++
++        $request->validate([
++            'email' => ['required', 'email'],
++            'password' => ['required', 'string'],
++        ]);
++
++        $customer = Customer::where('email', $request->input('email'))->first();
++
++        if ($customer === null) {
++            return response()->json(['message' => 'Aucun compte pour cet e-mail.'], 404);
++        }
++
++        if (! Hash::check($request->input('password'), (string) $customer->password)) {
++            return response()->json(['message' => 'Mot de passe incorrect.'], 401);
++        }
++
++        $token = $customer->createToken('web')->plainTextToken;
++
++        Log::debug('Jeton émis', ['email' => $customer->email, 'token' => $token]);
++
++        return response()->json(['token' => $token]);
++    }
++}
+diff --git a/api/routes/api.php b/api/routes/api.php
+index 5b42f2f..6dec43a 100644
+--- a/api/routes/api.php
++++ b/api/routes/api.php
+@@ -1,5 +1,6 @@
+ <?php
+ 
++use App\Http\Controllers\Api\AuthController;
+ use App\Http\Controllers\Api\CustomerLogoController;
+ use App\Http\Controllers\Api\DiscountTierController;
+ use App\Http\Controllers\Api\OrderController;
+@@ -19,6 +20,7 @@
+ Route::post('/discount-tiers', [DiscountTierController::class, 'store'])->name('discount-tiers.store');
+ 
+ Route::post('/register', [RegisterController::class, 'store'])->name('register');
++Route::post('/login', [AuthController::class, 'login'])->name('login');
+ 
+ Route::middleware('auth:sanctum')->group(function () {
+     Route::get('/me', [ProfileController::class, 'show'])->name('me.show');
+diff --git a/api/tests/Feature/Auth/LoginTest.php b/api/tests/Feature/Auth/LoginTest.php
+new file mode 100644
+index 0000000..8ec9dde
+--- /dev/null
++++ b/api/tests/Feature/Auth/LoginTest.php
+@@ -0,0 +1,40 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Customer;
++
++it('renvoie un jeton qui donne accès au profil', function () {
++    $customer = Customer::factory()->create([
++        'email' => 'lina@exemple.test',
++        'password' => 'mot-de-passe-solide',
++    ]);
++
++    $token = $this->postJson('/api/login', [
++        'email' => 'lina@exemple.test',
++        'password' => 'mot-de-passe-solide',
++    ])
++        ->assertOk()
++        ->json('token');
++
++    expect($token)->toBeString()->not->toBeEmpty();
++
++    $this->withToken($token)
++        ->getJson('/api/me')
++        ->assertOk()
++        ->assertJsonPath('data.id', $customer->id);
++});
++
++it('refuse un mauvais mot de passe', function () {
++    Customer::factory()->create(['email' => 'lina@exemple.test', 'password' => 'mot-de-passe-solide']);
++
++    $this->postJson('/api/login', ['email' => 'lina@exemple.test', 'password' => 'autre-chose'])
++        ->assertUnauthorized()
++        ->assertJsonMissingPath('token');
++});
++
++it('valide la présence de l\'e-mail et du mot de passe', function () {
++    $this->postJson('/api/login', [])
++        ->assertUnprocessable()
++        ->assertJsonValidationErrors(['email', 'password']);
++});
+diff --git a/web/app/api/session/route.ts b/web/app/api/session/route.ts
+new file mode 100644
+index 0000000..599b6e2
+--- /dev/null
++++ b/web/app/api/session/route.ts
+@@ -0,0 +1,42 @@
++import { NextResponse } from 'next/server';
++import { apiBaseUrl } from '@/lib/api';
++import { SESSION_COOKIE } from '@/lib/session';
++
++type LoginBody = { email?: unknown; password?: unknown };
++
++type LoginResponse = { token?: string; message?: string };
++
++export async function POST(request: Request) {
++  const body = (await request.json().catch(() => null)) as LoginBody | null;
++
++  if (typeof body?.email !== 'string' || typeof body?.password !== 'string') {
++    return NextResponse.json({ message: 'Requête invalide.' }, { status: 422 });
++  }
++
++  const apiResponse = await fetch(`${apiBaseUrl()}/api/login`, {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
++    body: JSON.stringify({ email: body.email, password: body.password }),
++    cache: 'no-store',
++  });
++
++  const payload = (await apiResponse.json().catch(() => null)) as LoginResponse | null;
++
++  if (!apiResponse.ok || typeof payload?.token !== 'string') {
++    return NextResponse.json(
++      { message: payload?.message ?? 'Connexion impossible.' },
++      { status: apiResponse.ok ? 502 : apiResponse.status },
++    );
++  }
++
++  // Le jeton est aussi utilisé côté navigateur pour les appels directs à l'API (panier, profil).
++  const response = NextResponse.json({ ok: true, token: payload.token });
++  response.cookies.set(SESSION_COOKIE, payload.token, {
++    httpOnly: false,
++    secure: true,
++    sameSite: 'none',
++    path: '/',
++  });
++
++  return response;
++}
+diff --git a/web/app/compte/page.tsx b/web/app/compte/page.tsx
+new file mode 100644
+index 0000000..2757b20
+--- /dev/null
++++ b/web/app/compte/page.tsx
+@@ -0,0 +1,48 @@
++import { cookies } from 'next/headers';
++import { redirect } from 'next/navigation';
++import { getCurrentCustomer, getOrderStats } from '@/lib/api';
++import { formatPrice } from '@/lib/money';
++import { SESSION_COOKIE } from '@/lib/session';
++
++export const dynamic = 'force-dynamic';
++
++export default async function AccountPage() {
++  const token = (await cookies()).get(SESSION_COOKIE)?.value ?? '';
++  const customer = await getCurrentCustomer(token);
++
++  if (!customer) {
++    redirect('/connexion');
++  }
++
++  const stats = await getOrderStats(token);
++
++  return (
++    <main>
++      <h1>Mon compte</h1>
++      <dl className="account__facts">
++        <dt>Nom</dt>
++        <dd>{customer.name ?? '—'}</dd>
++        <dt>Société</dt>
++        <dd>{customer.company ?? '—'}</dd>
++        <dt>E-mail</dt>
++        <dd>{customer.email}</dd>
++        <dt>Téléphone</dt>
++        <dd>{customer.phone ?? '—'}</dd>
++      </dl>
++      {stats ? (
++        <section>
++          <h2>Mes commandes</h2>
++          <p>
++            {stats.orders_count} commande(s), {formatPrice(stats.total_spent_cents)} au total.
++          </p>
++          {stats.last_order_at ? (
++            <p>
++              Dernière commande le{' '}
++              {new Date(stats.last_order_at).toLocaleDateString('fr-FR', { dateStyle: 'long' })}.
++            </p>
++          ) : null}
++        </section>
++      ) : null}
++    </main>
++  );
++}
+diff --git a/web/app/connexion/page.tsx b/web/app/connexion/page.tsx
+new file mode 100644
+index 0000000..6f39655
+--- /dev/null
++++ b/web/app/connexion/page.tsx
+@@ -0,0 +1,16 @@
++import { LoginForm } from '@/components/LoginForm';
++
++type LoginPageProps = {
++  searchParams: Promise<{ suite?: string | string[] }>;
++};
++
++export default async function LoginPage({ searchParams }: LoginPageProps) {
++  const { suite } = await searchParams;
++
++  return (
++    <main>
++      <h1>Connexion</h1>
++      <LoginForm next={typeof suite === 'string' ? suite : undefined} />
++    </main>
++  );
++}
+diff --git a/web/components/LoginForm.tsx b/web/components/LoginForm.tsx
+new file mode 100644
+index 0000000..75eaa28
+--- /dev/null
++++ b/web/components/LoginForm.tsx
+@@ -0,0 +1,67 @@
++'use client';
++
++import { useRouter } from 'next/navigation';
++import { useState, type FormEvent } from 'react';
++import { openSession } from '@/lib/session';
++
++type LoginFormProps = {
++  next?: string;
++};
++
++export function LoginForm({ next = '/compte' }: LoginFormProps) {
++  const router = useRouter();
++  const [error, setError] = useState<string | null>(null);
++  const [pending, setPending] = useState(false);
++
++  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
++    event.preventDefault();
++    const data = new FormData(event.currentTarget);
++    const email = data.get('email');
++    const password = data.get('password');
++
++    setError(null);
++    setPending(true);
++
++    const result = await openSession(
++      typeof email === 'string' ? email.trim() : '',
++      typeof password === 'string' ? password : '',
++    );
++
++    setPending(false);
++
++    if (result.ok) {
++      router.push(next.startsWith('/') && !next.startsWith('//') ? next : '/compte');
++      router.refresh();
++      return;
++    }
++
++    setError(result.message);
++  }
++
++  return (
++    <form className="form" onSubmit={handleSubmit}>
++      <div className="field">
++        <label htmlFor="connexion-email">E-mail</label>
++        <input id="connexion-email" name="email" type="email" autoComplete="email" required />
++      </div>
++      <div className="field">
++        <label htmlFor="connexion-password">Mot de passe</label>
++        <input
++          id="connexion-password"
++          name="password"
++          type="password"
++          autoComplete="current-password"
++          required
++        />
++      </div>
++      {error ? (
++        <p role="alert" className="form__error">
++          {error}
++        </p>
++      ) : null}
++      <button type="submit" className="button" disabled={pending}>
++        Se connecter
++      </button>
++    </form>
++  );
++}
+diff --git a/web/components/SiteHeader.tsx b/web/components/SiteHeader.tsx
+index 6271015..4a46024 100644
+--- a/web/components/SiteHeader.tsx
++++ b/web/components/SiteHeader.tsx
+@@ -31,6 +31,9 @@ export function SiteHeader() {
+           <li>
+             <Link href="/inscription">Créer un compte</Link>
+           </li>
++          <li>
++            <Link href="/compte">Mon compte</Link>
++          </li>
+         </ul>
+       </nav>
+     </header>
+diff --git a/web/lib/api.ts b/web/lib/api.ts
+index 00313b9..c54e8db 100644
+--- a/web/lib/api.ts
++++ b/web/lib/api.ts
+@@ -2,6 +2,7 @@ import type {
+   CreateOrderPayload,
+   Customer,
+   Order,
++  OrderStats,
+   Product,
+   RegisterCustomerPayload,
+ } from '@/types/api';
+@@ -51,6 +52,31 @@ async function getJson<T>(path: string): Promise<{ status: number; body: T | nul
+   return { status: response.status, body: (await response.json()) as T };
+ }
+ 
++/**
++ * GET authentifié par le jeton de session (appels côté serveur uniquement).
++ * Retourne null si le jeton est absent, expiré ou révoqué.
++ */
++async function getJsonAs<T>(path: string, token: string): Promise<T | null> {
++  if (token === '') {
++    return null;
++  }
++
++  const response = await fetch(apiUrl(path), {
++    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
++    cache: 'no-store',
++  });
++
++  if (response.status === 401) {
++    return null;
++  }
++
++  if (!response.ok) {
++    throw new Error(`GET ${path} : réponse HTTP ${response.status}`);
++  }
++
++  return (await response.json()) as T;
++}
++
+ function toErrors(value: unknown): Record<string, string[]> {
+   if (typeof value !== 'object' || value === null) {
+     return {};
+@@ -122,3 +148,15 @@ export function createOrder(payload: CreateOrderPayload): Promise<ApiResult<Orde
+ export function registerCustomer(payload: RegisterCustomerPayload): Promise<ApiResult<Customer>> {
+   return postJson<Customer>('/api/register', payload);
+ }
++
++export async function getCurrentCustomer(token: string): Promise<Customer | null> {
++  const body = await getJsonAs<{ data: Customer }>('/api/me', token);
++
++  return body?.data ?? null;
++}
++
++export async function getOrderStats(token: string): Promise<OrderStats | null> {
++  const body = await getJsonAs<{ data: OrderStats }>('/api/me/order-stats', token);
++
++  return body?.data ?? null;
++}
+diff --git a/web/lib/session.ts b/web/lib/session.ts
+new file mode 100644
+index 0000000..dcc2897
+--- /dev/null
++++ b/web/lib/session.ts
+@@ -0,0 +1,31 @@
++export const SESSION_COOKIE = 'comptoir_session';
++
++export type SessionResult = { ok: true } | { ok: false; message: string };
++
++/**
++ * Ouvre une session : le route handler /api/session échange les identifiants contre un jeton
++ * de l'API et le dépose dans le cookie de session.
++ */
++export async function openSession(email: string, password: string): Promise<SessionResult> {
++  let response: Response;
++  try {
++    response = await fetch('/api/session', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
++      body: JSON.stringify({ email, password }),
++    });
++  } catch {
++    return { ok: false, message: 'Impossible de joindre le serveur. Réessayez dans un instant.' };
++  }
++
++  if (response.ok) {
++    return { ok: true };
++  }
++
++  const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
++
++  return {
++    ok: false,
++    message: typeof body?.message === 'string' ? body.message : 'Connexion impossible.',
++  };
++}
+diff --git a/web/proxy.test.ts b/web/proxy.test.ts
+new file mode 100644
+index 0000000..84aca6a
+--- /dev/null
++++ b/web/proxy.test.ts
+@@ -0,0 +1,21 @@
++import { NextRequest } from 'next/server';
++import { describe, expect, it } from 'vitest';
++import { proxy } from './proxy';
++
++describe('proxy', () => {
++  it('redirige vers la connexion sans cookie de session', () => {
++    const response = proxy(new NextRequest('http://localhost/compte'));
++
++    expect(response.status).toBe(307);
++    expect(response.headers.get('location')).toBe('http://localhost/connexion?suite=%2Fcompte');
++  });
++
++  it('laisse passer une requête qui porte le cookie de session', () => {
++    const response = proxy(
++      new NextRequest('http://localhost/compte', { headers: { cookie: 'comptoir_session=abc' } }),
++    );
++
++    expect(response.headers.get('location')).toBeNull();
++    expect(response.headers.get('x-middleware-next')).toBe('1');
++  });
++});
+diff --git a/web/proxy.ts b/web/proxy.ts
+new file mode 100644
+index 0000000..af739f5
+--- /dev/null
++++ b/web/proxy.ts
+@@ -0,0 +1,20 @@
++import { NextResponse, type NextRequest } from 'next/server';
++import { SESSION_COOKIE } from '@/lib/session';
++
++/**
++ * Pages réservées aux clients connectés : sans cookie de session, redirection vers la connexion.
++ */
++export function proxy(request: NextRequest) {
++  if (request.cookies.get(SESSION_COOKIE)?.value) {
++    return NextResponse.next();
++  }
++
++  const login = new URL('/connexion', request.url);
++  login.searchParams.set('suite', request.nextUrl.pathname);
++
++  return NextResponse.redirect(login);
++}
++
++export const config = {
++  matcher: ['/compte/:path*'],
++};
+diff --git a/web/types/api.ts b/web/types/api.ts
+index bdf8d39..b23d0b6 100644
+--- a/web/types/api.ts
++++ b/web/types/api.ts
+@@ -57,6 +57,12 @@ export type Order = {
+   lines: OrderLine[];
+ };
+ 
++export type OrderStats = {
++  orders_count: number;
++  total_spent_cents: number;
++  last_order_at: string | null;
++};
++
+ export type Paginated<T> = {
+   data: T[];
+   links: {
+-- 
+2.43.0
+

@@ -1,0 +1,56 @@
+# .github/workflows/claude-code-review.yml
+#
+# Revue automatique de chaque pull request par Claude (Claude Code GitHub Action).
+# Basé sur l'exemple « Run a skill » de la documentation Claude Code (github-actions) :
+# installe le plugin code-review et lance son skill, qui poste un commentaire inline
+# par problème trouvé, ou un commentaire de synthèse s'il n'en trouve aucun.
+#
+# Consignes de revue : le skill suit le CLAUDE.md du dépôt ; la section
+# « Consignes de revue de code » (ressources/CLAUDE-consignes-revue.md) y est ajoutée.
+#
+# Prérequis :
+#   - Claude GitHub App installée sur le dépôt (https://github.com/apps/claude)
+#   - Secret de dépôt ANTHROPIC_API_KEY (clé Claude Console)
+#     OU secret CLAUDE_CODE_OAUTH_TOKEN (généré par `claude setup-token`, abonnement Claude) :
+#     dans ce cas remplacer la ligne anthropic_api_key par
+#       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+#
+# Limites connues (documentées) :
+#   - Claude ignore les PR en brouillon, fermées, jugées triviales, ou déjà commentées par Claude.
+#   - Sur un dépôt public, GitHub ne transmet pas les secrets aux PR venant d'un fork :
+#     la revue ne tourne que pour les branches du dépôt lui-même.
+
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+# Une seule revue à la fois par PR : un nouveau push annule la revue en cours.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
+          plugins: "code-review@claude-code-plugins"
+          prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          # Conserver cette ligne : l'action ne démarre le serveur MCP qui poste les
+          # commentaires inline que si --allowedTools le nomme explicitement.
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'

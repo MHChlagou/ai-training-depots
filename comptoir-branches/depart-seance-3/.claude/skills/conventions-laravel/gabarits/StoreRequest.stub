@@ -1,0 +1,29 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+final class Store{{ Model }}Request extends FormRequest
+{
+    public function authorize(): bool
+    {
+        // Remplacer par une Policy dès que la route est protégée :
+        // return $this->user()?->can('create', \App\Models\{{ Model }}::class) ?? false;
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        return [
+            // 'champ' => ['required', 'string', 'max:255'],
+            // 'montant_cents' => ['required', 'integer', 'min:0'],
+            // 'relation_id' => ['required', 'integer', 'exists:{{ table }},id'],
+        ];
+    }
+}
