@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run start)",
+      "Bash(npm run lint)",
+      "Bash(npx lighthouse *)",
+      "Bash(node .claude/skills/audit-seo-geo/scripts/extraire-seo.mjs *)",
+      "Bash(node scripts/comparer-lighthouse.mjs *)",
+      "Bash(bash scripts/mesurer.sh *)",
+      "mcp__playwright__*",
+      "mcp__chrome-devtools__*"
+    ],
+    "ask": [
+      "Bash(npm install *)",
+      "Bash(git commit *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(git push *)",
+      "Bash(rm -rf *)"
+    ]
+  }
+}
