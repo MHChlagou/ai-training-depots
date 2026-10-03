@@ -56,7 +56,7 @@ Toujours lancer les commandes depuis le bon sous-dossier.
 - Ne jamais lire, afficher ni modifier les fichiers `.env` (secrets). Utiliser `.env.example` comme référence.
 - Ne jamais faire `git push`, ni de commit sans demande explicite.
 - Ne jamais modifier une migration déjà fusionnée : créer une nouvelle migration.
-- Ne jamais lancer `php artisan migrate:fresh` ni `db:wipe` (base partagée du binôme).
+- Ne jamais lancer `php artisan migrate:fresh` ni `db:wipe` (base de développement utilisée par les exercices).
 - Ne pas ajouter de dépendance (Composer ou npm) sans le justifier et demander.
 
 ## Pièges connus

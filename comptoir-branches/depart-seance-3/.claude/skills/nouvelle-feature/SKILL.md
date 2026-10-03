@@ -66,4 +66,4 @@ Terminez par :
 - les points « À corriger » ou « Suggestions » du reviewer laissés de côté ;
 - un message de commit proposé au format Conventional Commits, en français.
 
-Ne faites ni `git commit` ni `git push` : le binôme relit le diff et commite lui-même.
+Ne faites ni `git commit` ni `git push` : l'utilisateur relit le diff et commite lui-même.

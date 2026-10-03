@@ -5,7 +5,7 @@
 | Date | AAAA-MM-JJ |
 | Origine auditée | <URL> (build de production : oui / non) |
 | Pages analysées | <liste des chemins> |
-| Auditeurs | <binôme> assisté de Claude Code (skill audit-seo-geo) |
+| Auditeur | <prenom> assisté de Claude Code (skill audit-seo-geo) |
 
 ## 1. Synthèse
 
