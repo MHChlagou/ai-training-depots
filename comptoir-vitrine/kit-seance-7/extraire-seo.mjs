@@ -7,7 +7,7 @@
 //
 // Le script lit le HTML BRUT renvoyé par le serveur, sans exécuter JavaScript :
 // c'est ce que voit un robot qui ne rend pas les pages. Un contenu absent ici
-// (par exemple un produit chargé dans un useEffect) est invisible pour lui.
+// (par exemple un contenu chargé après coup par JavaScript) est invisible pour lui.
 // Node 18 ou plus récent (fetch natif). Aucune dépendance.
 
 const [origine = "http://localhost:3000", ...chemins] = process.argv.slice(2);
